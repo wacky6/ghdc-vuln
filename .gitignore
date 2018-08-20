@@ -1,0 +1,6 @@
+.DS_Store
+*.log
+*.ghdc.json
+node_modules
+data
+ACCESS_TOKEN
