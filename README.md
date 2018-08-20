@@ -17,3 +17,8 @@ GitHub Date Colelction - Vulnerable Source code
 
 ## Commit JSON structure
 TO BE DETERMINED
+
+## Docker Usage
+```
+docker run -v <local_dir>:/root/data ghdc-vuln -t <TOKEN> 'query keywords'
+```
