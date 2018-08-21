@@ -75,10 +75,15 @@ module.exports = async function ghdc_vuln(opts) {
             writeFile(commitJsonPath, JSON.stringify(commit, null, '  '), _ => null)
 
             for (const file of commit.files) {
-                const rawFile = await resourceAgent.request(file.raw_url)
-                const filePath = join(sourceDataPath, commitPathSuffix, file.filename)
-                mkdirp(dirname(filePath))
-                writeFile(filePath, rawFile, _ => null)
+                await resourceAgent.request(file.raw_url).then(
+                    rawFile => {
+                        const filePath = join(sourceDataPath, commitPathSuffix, file.filename)
+                        mkdirp(dirname(filePath))
+                        writeFile(filePath, rawFile, _ => null)
+                    },
+                    error => null    // ignore error during resource download
+                )
+
             }
         }
 
