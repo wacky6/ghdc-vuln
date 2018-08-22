@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const yargs = require('yargs')
+const { parseDateRange } = require('../lib/date-range')
 
 require('../index')(
     require('yargs')
@@ -10,18 +11,6 @@ require('../index')(
                 type: 'string'
             })
         )
-        .option('l', {
-            alias: 'load-factor-api',
-            default: 1,
-            describe: 'Normal API rate limit factor, range: (0..1]',
-            type: 'number'
-        })
-        .option('L', {
-            alias: 'load-factor-search',
-            default: 1,
-            describe: 'Search API rate limit factor, range: (0..1]',
-            type: 'number'
-        })
         .option('t', {
             alias: 'token',
             describe: 'GitHub Access Token',
@@ -42,6 +31,12 @@ require('../index')(
             describe: 'output directory',
             type: 'string',
             default: 'data'
+        })
+        .option('d', {
+            alias: 'date-range',
+            describe: 'search commits incrementally by month range, format: yyyy-MM..yyyy-MM',
+            default: '<last 3 years>',
+            coerce: str => parseDateRange(str === '<last 3 years>' ? '-3yr' : str)
         })
         .argv
 )
