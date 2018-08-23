@@ -73,7 +73,8 @@ module.exports = function ghdc_vuln(opts) {
             if (posRelNext >= 0) {
                 const nextLink = link.slice(0, posRelNext).trim().slice(1, -2)
                 const { query: _ignored, ...restOpts } = requestOpts
-                searchFetcher.queue({ ...restOpts, url: nextLink })
+                const nextRequestOpts = { ...restOpts, url: nextLink }
+                searchFetcher.queue(nextRequestOpts, { requestOpts: nextRequestOpts })
                 winston.verbose(`ghdc: queue next page: ${nextLink}`)
             }
         }
