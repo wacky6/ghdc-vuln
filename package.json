@@ -9,6 +9,7 @@
   "private": true,
   "dependencies": {
     "axios": "^0.18.0",
+    "bytes": "^3.0.0",
     "mkdirp": "^0.5.1",
     "rimraf": "^2.6.2",
     "shortid": "^2.2.13",

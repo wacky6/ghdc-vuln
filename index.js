@@ -11,6 +11,7 @@ const { dirname, join } = require('path')
 const { homedir } = require('os')
 const { generateQueryDateRange } = require('./lib/date-range')
 const qs = require('querystring')
+const bytes = require('bytes')
 
 const COMMIT_SIZE_UPPERBOUND_TO_FETCH = 10
 
@@ -38,9 +39,22 @@ module.exports = function ghdc_vuln(opts) {
 
     const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
 
+    function printStatistics() {
+
+    }
+
     setInterval(_ => {
-        console.log(`queue: sr=${searchFetcher.getNumberOfTasks()}, cm=${commitFetcher.getNumberOfTasks()}, rp=${repoFetcher.getNumberOfTasks()}, rc=${resourceFetcher.getNumberOfTasks()}`)
-    }, 60 * 1000)
+        const sr = searchFetcher.getNumberOfTasks()
+        const srf = searchFetcher.getNumberOfFinishedTasks()
+        const cm = commitFetcher.getNumberOfTasks()
+        const cmf = commitFetcher.getNumberOfFinishedTasks()
+        const rp = repoFetcher.getNumberOfTasks()
+        const rpf = repoFetcher.getNumberOfFinishedTasks()
+        const rc = resourceFetcher.getNumberOfTasks()
+        const rcf = resourceFetcher.getNumberOfFinishedTasks()
+        const rss = process.memoryUsage().rss
+        winston.info(`stat: sr=${sr}/${srf}, cm=${cm}/${cmf}, rp=${rp}/${rpf}, rc=${rc}/${rcf}, rss=${bytes(rss)}`)
+    }, 30 * 1000).unref()
 
     searchFetcher.on('response', (searchResult, { requestOpts }, resp) => {
         winston.info(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
