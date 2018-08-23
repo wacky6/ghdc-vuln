@@ -25,9 +25,9 @@ module.exports = function ghdc_vuln(opts) {
     const repoFetcher = new GithubApiFetcher(opts.name + '-repo')
     const resourceFetcher = new GithubResourceFetcher(opts.name)
 
-    searchFetcher.setRequestPrecondition(_ => commitFetcher.getNumberOfTasks() < 500 && repoFetcher.getNumberOfTasks() < 500)
-    commitFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 1000)
-    repoFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 1000)
+    searchFetcher.setRequestPrecondition(_ => commitFetcher.getNumberOfTasks() < 50 && repoFetcher.getNumberOfTasks() < 50)
+    commitFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 100)
+    repoFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 100)
 
     const taskPath = join(OUTPUT_DIR, opts.name)
     const commitDataPath = join(taskPath, 'commits')
