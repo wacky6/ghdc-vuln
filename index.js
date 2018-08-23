@@ -39,11 +39,7 @@ module.exports = function ghdc_vuln(opts) {
 
     const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
 
-    function printStatistics() {
-
-    }
-
-    setInterval(_ => {
+    function printStatistic() {
         const sr = searchFetcher.getNumberOfTasks()
         const srf = searchFetcher.getNumberOfFinishedTasks()
         const cm = commitFetcher.getNumberOfTasks()
@@ -54,7 +50,9 @@ module.exports = function ghdc_vuln(opts) {
         const rcf = resourceFetcher.getNumberOfFinishedTasks()
         const rss = process.memoryUsage().rss
         winston.info(`stat: sr=${sr}/${srf}, cm=${cm}/${cmf}, rp=${rp}/${rpf}, rc=${rc}/${rcf}, rss=${bytes(rss)}`)
-    }, 30 * 1000).unref()
+    }
+
+    setInterval(printStatistic, 30 * 1000).unref()
 
     searchFetcher.on('response', (searchResult, { requestOpts }, resp) => {
         winston.info(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
