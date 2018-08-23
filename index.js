@@ -95,10 +95,12 @@ module.exports = function ghdc_vuln(opts) {
         // if commit changes are small (less than <some> files), fetch them
         if (commit.files.length < COMMIT_SIZE_UPPERBOUND_TO_FETCH) {
             for (const file of commit.files) {
-                resourceFetcher.queue({
-                    method: 'GET',
-                    url: file.raw_url
-                }, { repo, commit, file })
+                if (file.raw_url) {
+                    resourceFetcher.queue({
+                        method: 'GET',
+                        url: file.raw_url
+                    }, { repo, commit, file })
+                }
             }
             winston.info(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files queued`)
         } else {
