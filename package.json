@@ -8,6 +8,7 @@
   "license": "GPL-3.0",
   "private": true,
   "dependencies": {
+    "async": "^2.6.1",
     "axios": "^0.18.0",
     "bytes": "^3.0.0",
     "mkdirp": "^0.5.1",
