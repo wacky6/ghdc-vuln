@@ -38,5 +38,11 @@ require('../index')(
             default: '<last 3 years>',
             coerce: str => parseDateRange(str === '<last 3 years>' ? '-3yr' : str)
         })
+        .option('z', {
+            alias: 'gzip',
+            describe: 'gzip downloaded files',
+            type: 'boolean',
+            default: false
+        })
         .argv
 )

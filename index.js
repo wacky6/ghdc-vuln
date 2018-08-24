@@ -6,20 +6,34 @@ const {
 } = require('./lib/gh-fetch2')
 const winston = require('winston')
 const mkdirp = require('mkdirp').sync
-const { writeFile } = require('fs')
+const { writeFile: _writeFile } = require('fs')
 const { dirname, join } = require('path')
 const { homedir } = require('os')
 const { generateQueryDateRange } = require('./lib/date-range')
 const qs = require('querystring')
 const bytes = require('bytes')
+const zlib = require('zlib')
 
 const COMMIT_SIZE_UPPERBOUND_TO_FETCH = 10
+
+function createWriteFileFn(compression = null) {
+    if (compression) {
+        return (filepath, data, cbk) => {
+            const buffer = typeof data === 'string' ? Buffer.from(data) : data
+            zlib.gzip(buffer, (err, gzBuffer) => _writeFile(filepath + '.gz', gzBuffer, cbk))
+        }
+    } else {
+        return _writeFile
+    }
+}
 
 module.exports = function ghdc_vuln(opts) {
     opts.name = opts.name || shortid()
 
     const OUTPUT_DIR = opts.outputDir.replace(/^~/, homedir())
     winston.level = opts.verbose ? 'verbose' : 'info'
+
+    const writeFile = createWriteFileFn(opts.gzip)
 
     const searchFetcher = new GithubApiFetcher(opts.name + '-search')
     const commitFetcher = new GithubApiFetcher(opts.name + '-commit')
