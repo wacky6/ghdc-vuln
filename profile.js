@@ -32,8 +32,8 @@ module.exports = async function ghdcDataProfile(opts) {
                 repo.open_issues,
                 repo.language,
                 commit.files.length,
-                commit.stats.addition,
-                commit.stats.deletion,
+                commit.stats.additions,
+                commit.stats.deletions,
                 commit.sha
             ]
             console.log(line.join(','))
