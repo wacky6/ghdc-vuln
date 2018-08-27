@@ -10,6 +10,7 @@
   "dependencies": {
     "async": "^2.6.1",
     "axios": "^0.18.0",
+    "bloom-filter": "^0.2.0",
     "bytes": "^3.0.0",
     "mkdirp": "^0.5.1",
     "rimraf": "^2.6.2",

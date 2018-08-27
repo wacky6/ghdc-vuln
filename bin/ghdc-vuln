@@ -44,5 +44,11 @@ require('../index')(
             type: 'boolean',
             default: false
         })
+        .option('b', {
+            alias: 'bloom-filter',
+            describe: 'use bloom filter to catch incompetent apes that cause commit duplications',
+            type: 'boolean',
+            default: false
+        })
         .argv
 )

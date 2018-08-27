@@ -6,13 +6,14 @@ const {
 } = require('./lib/gh-fetch2')
 const winston = require('winston')
 const mkdirp = require('mkdirp').sync
-const { writeFile: _writeFile } = require('fs')
+const { writeFile: _writeFile, createWriteStream } = require('fs')
 const { dirname, join } = require('path')
 const { homedir } = require('os')
 const { generateQueryDateRange } = require('./lib/date-range')
 const qs = require('querystring')
 const bytes = require('bytes')
 const zlib = require('zlib')
+const BloomFilter = require('bloom-filter')
 
 const COMMIT_SIZE_UPPERBOUND_TO_FETCH = 10
 
@@ -51,6 +52,27 @@ module.exports = function ghdc_vuln(opts) {
     mkdirp(commitDataPath)
     mkdirp(sourceDataPath)
 
+    const {
+        isInBloomFilter,
+        addToBloomFilter,
+        writeToBloomFilterLog,
+    } = (() => {
+        if (!opts.bloomFilter) {
+            return {
+                isInBloomFilter: () => false,
+                addToBloomFilter: () => undefined,
+                writeToBloomFilterLog: () => undefined,
+            }
+        }
+        const bloomFilter = BloomFilter.create(1e7, 1e-5)    // may miss 100 items in 10,000,000
+        const bloomFilterLog = createWriteStream(join(taskPath, 'incompetent-ape-list.txt'))
+        return {
+            isInBloomFilter: sha => bloomFilter.contains(Buffer.from(sha, 'hex')),
+            addToBloomFilter: sha => bloomFilter.insert(Buffer.from(sha, 'hex')),
+            writeToBloomFilterLog: msg => bloomFilterLog.write(`${msg}\n`)
+        }
+    })()
+
     const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
 
     function printStatistic() {
@@ -71,6 +93,13 @@ module.exports = function ghdc_vuln(opts) {
     searchFetcher.on('response', (searchResult, { requestOpts }, resp) => {
         winston.info(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
         for (const item of searchResult.items) {
+            if (isInBloomFilter(item.sha)) {
+                // caught an incompetent ape, write it down
+                // do not queue this commit (because it has been fetched by another request)
+                writeToBloomFilterLog(`${item.sha}\t${item.repository.full_name}`)
+                continue
+            }
+            addToBloomFilter(item.sha)
             commitFetcher.queue({
                 method: 'GET',
                 url: item.url,
