@@ -8,11 +8,18 @@ function asyncMap(coll, limit, fn) {
     })
 }
 
+function round2(n) {
+    return Math.round(n * 100) / 100
+}
+
 module.exports = async function ghdcDataProfile(opts) {
     const dataDir = opts.dataDir
     const commitDir = join(dataDir, 'commits')
 
     const commitFiles = await fs.readdir(commitDir)
+    const sha = new Set()
+    const lang = {}
+    const langDedupe = {}
 
     // NOTE: do not read all files into memory. Memory may be insufficient
     //       do stream processing
@@ -25,6 +32,14 @@ module.exports = async function ghdcDataProfile(opts) {
                 commit,
                 repo
             } = await fs.readFile(join(commitDir, filename), { encoding: 'utf-8' }).then(str => JSON.parse(str))
+
+            lang[repo.language] = (lang[repo.language] || 0) + 1
+
+            if (sha.has(commit.sha)) return
+            sha.add(commit.sha)
+
+            langDedupe[repo.language] = (langDedupe[repo.language] || 0) + 1
+
             const line = [
                 repo.full_name,
                 repo.stargazers_count,
@@ -39,4 +54,13 @@ module.exports = async function ghdcDataProfile(opts) {
             console.log(line.join(','))
         }
     )
+
+    console.error(`distinct commits: ${ sha.size } / ${ commitFiles.length }, ${ round2(sha.size / commitFiles.length * 100) }%`)
+    console.error('per language: <deduped> / <raw>')
+    for (const key in lang) {
+        if (lang[key] > 100) {
+            console.error(`\t${key}: ${langDedupe[key]} / ${lang[key]}, ${ round2(langDedupe[key] / lang[key] * 100) }%`)
+        }
+    }
+
 }
