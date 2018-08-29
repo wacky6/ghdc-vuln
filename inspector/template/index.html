@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title> <%= dataDir %> - ghdc-data-inspect </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/static/ace-min/ace.js"></script>
+    <link rel="stylesheet" type="text/css" media="screen" href="/static/prism.css" />
+    <style>
+        .header {
+            display: flex;
+            width: 100%;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .editor {
+            min-width: 30ch;
+            flex-grow: 1;
+            margin: 0 2ch;
+        }
+        .editor-input {
+            min-width: 30ch;
+            height: 4em;
+        }
+        .buttons {
+            align-self: center;
+        }
+        #query {
+            width: 12ch;
+            height: 2em;
+        }
+        pre, table {
+            font-size: .8em;
+        }
+        table {
+            margin-top: 1em;
+        }
+        table td {
+            padding: .25em 2ch;
+        }
+        h5 {
+            margin: 0;
+        }
+        .field.title {
+            max-width: 80ch;
+            word-break: break-all;
+        }
+        .field.repo {
+            max-width: 40ch;
+        }
+        .field.files {
+            color: #409EFF;
+        }
+        .field.additions {
+            color: #67C23A;
+        }
+        .field.deletions {
+            color: #F56C6C;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="hint">
+            <pre><code class="language-javascript">commit: { repo, language, stars, title, time, files, additions, deletions }
+random: random() -> number    // seeded random generator </code></pre>
+        </div>
+        <div class="header">
+            <div class="editor">
+                <h5>Filter Function: <code>(commit: commit) -> true / false</code></h5>
+                <div id="filter-fn" class="editor-input">return true</div>
+            </div>
+            <div class="editor">
+                <h5>Sort Function: <code>(a, b: commit) -> -1 / 0 / 1</code></h5>
+                <div id="sort-fn" class="editor-input">return a.time - b.time</div>
+            </div>
+
+            <form action="/" method="get">
+                <input name="filter" hidden />
+                <input name="sort" hidden />
+                <input type="submit" id="query" value="Query" />
+            </form>
+        </div>
+    </header>
+
+    <main>
+        <% if (!isReady) { %>
+            <h3>Commit cache is being build, please refresh the page after a few seconds.</h3>
+        <% } %>
+        <% if (isReady) { %>
+            <div>Total: <%= list.length %> commits.</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th class="sortable" data-key="lang">lang</th>
+                        <th class="sortable" data-key="repo">repo</th>
+                        <th>stats</th>
+                        <th class="sortable" data-key="title" style="max-width: 80ch">title</th>
+                        <th class="sortable" data-key="time" style="max-width: 19ch">time</th>
+                        <th class="" style="max-width: 16ch">op.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for(const commit of list) { %>
+                    <tr>
+                        <td class="field lang"><%= commit.language %></td>
+                        <td class="field repo"><a href="<%= `/commits/${commit.sha}` %>"><%= commit.repo %></a></td>
+                        <td class="field stats">
+                            <span class="field files"><%= commit.files %></span>,
+                            <span class="field additions">+<%= commit.additions %></span>,
+                            <span class="field deletions">-<%= commit.deletions %></span>
+                        </td>
+                        <td class="field title"><%= commit.title %></td>
+                        <td class="field date"><%= new Date(commit.time).toISOString().slice(0,19).replace('T', ' ') %></td>
+                        <td class="field op"><a href="<%= commit.githubUrl %>">[GitHub]</a></td>
+                    </tr>
+                    <% } %>
+                </tbody>
+            </table>
+        <% } %>
+    </main>
+
+    <script src="/static/prism.js"></script>
+    <script>
+        window._previousQuery = <%- JSON.stringify(query) %>
+    </script>
+    <script>
+        const query = window._previousQuery
+        const $ = (...args) => document.querySelector(...args)
+        const filterFn = ace.edit("filter-fn")
+        filterFn.setTheme("ace/theme/github")
+        filterFn.session.setMode("ace/mode/javascript")
+
+        const sortFn = ace.edit("sort-fn")
+        sortFn.setTheme("ace/theme/github")
+        sortFn.session.setMode("ace/mode/javascript")
+
+        // set query value
+        filterFn.setValue(query.filter)
+        sortFn.setValue(query.sort)
+
+        filterFn.on('change', _ => $('form [name=filter]').value = filterFn.getValue())
+        sortFn.on('change', _ => $('form [name=sort]').value = sortFn.getValue())
+
+        $('form [name=filter]').value = filterFn.getValue()
+        $('form [name=sort]').value = sortFn.getValue()
+    </script>
+</body>
+</html>
