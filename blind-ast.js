@@ -6,14 +6,14 @@ const fs = require('fs').promises
 const { join, extname, resolve, basename } = require('path')
 const async = require('async')
 const mkdirp = require('mkdirp').sync
-const rimraf = promisify(require('rimraf'))
+const tmpdirSync = require('tmp').dirSync
 
 const { readGzFile } = require('./inspector')
 
 const COMMIT_FILTER = (commit, repo) =>
     repo.language === 'C'
     && commit.files.length > 0
-    && commit.stats.additions <= 20
+    && commit.stats.additions <= 30
     && commit.files.find(file => extname(file.filename).toLowerCase() === '.c')
 
 function asyncMap(coll, limit, fn) {
@@ -22,12 +22,12 @@ function asyncMap(coll, limit, fn) {
     })
 }
 
-function generateAst(filepath) {
+function generateAst(filepath, cwd) {
     return execFile('clang', [
         '-cc1',
         '-ast-dump',
         filepath
-    ], { maxBuffer: 128 * 1024 * 1024 }).then(
+    ], { maxBuffer: 64 * 1024 * 1024, cwd }).then(
         ret => ret,    // { stdout, stderr }
         error => ({ error, stdout: error.stdout, stderr: error.stderr })
     )
@@ -44,6 +44,12 @@ module.exports = async function(opts) {
 
     const BASE_OUTPUT_DIR = resolve(process.cwd(), opts.outputDir)
 
+    let nStarted = 0
+    let nOk = 0
+    let nFullAst = 0
+    let nPartialAst = 0
+    let nSeriousError = 0
+
     await asyncMap(
         commitFiles,
         require('os').cpus().length,
@@ -53,98 +59,116 @@ module.exports = async function(opts) {
                 repo
             } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
 
-            console.log(`-------- working on ${repo.full_name}`)
-
             if (!COMMIT_FILTER(commit, repo)) {
-                console.log('skip: ${repo.full_name} ${commit.sha}')
+                console.log(`skip: ${repo.full_name} ${commit.sha}`)
                 return null
             }
 
-            const COMMIT_DIR = repo.full_name.replace(/\//g, '__') + '__' + commit.sha
-            const OUTPUT_DIR = join(BASE_OUTPUT_DIR, COMMIT_DIR)
-            mkdirp(OUTPUT_DIR)
+            const workingDir = tmpdirSync({ unsafeCleanup: true })
+            nStarted += 1
 
-            process.chdir('/tmp')
+            try {
+                let nVulnAst = 0
+                let nFixedAst = 0
+                let nError = 0
 
-            await rimraf('/tmp/sample')
-            await execFile('git', [
-                'clone',
-                repo.clone_url,
-                'sample'
-            ], { maxBuffer: 128 * 1024 * 1024 })
+                console.log(`${repo.full_name} ${commit.sha}: start clone -> ${workingDir.name}`)
 
-            process.chdir('/tmp/sample')
+                const COMMIT_DIR = repo.full_name.replace(/\//g, '__') + '__' + commit.sha
+                const OUTPUT_DIR = join(BASE_OUTPUT_DIR, COMMIT_DIR)
+                mkdirp(OUTPUT_DIR)
 
-            const sources = commit.files.filter(file =>
-                extname(file.filename).toLowerCase() === '.c'
-                && file.status === 'modified'
-            )
+                await execFile('git', [
+                    'clone',
+                    repo.clone_url,
+                    workingDir.name
+                ], { maxBuffer: 64 * 1024 * 1024, cwd: workingDir.name })
 
-            // compile vuln version
-            await execFile('git', [
-                'checkout',
-                '-f',
-                commit.parents[0].sha
-            ])
-            console.log('-------- compiling parent')
+                const sources = commit.files.filter(file =>
+                    extname(file.filename).toLowerCase() === '.c'
+                    && file.status === 'modified'
+                )
 
-            for (const f of sources) {
-                const {
-                    error,
-                    stdout,
-                    stderr
-                } = await generateAst(f.filename)
+                // compile vuln version
+                await execFile('git', [
+                    'checkout',
+                    '-f',
+                    commit.parents[0].sha
+                ], { cwd: workingDir.name })
 
-                console.log(stderr)
-
-                if (stderr.length > 0) {
-                    await fs.writeFile(
-                        join(OUTPUT_DIR, 'vuln_' + flattenFilename(f.filename) + '.stderr.txt'),
+                for (const f of sources) {
+                    const {
+                        error,
+                        stdout,
                         stderr
-                    )
+                    } = await generateAst(f.filename, workingDir.name)
+
+                    nError += error ? 1 : 0
+
+                    if (stderr.length > 0) {
+                        await fs.writeFile(
+                            join(OUTPUT_DIR, 'vuln__' + flattenFilename(f.filename) + '.stderr.txt'),
+                            stderr
+                        )
+                    }
+                    if (stdout.length > 2) {
+                        nVulnAst += 1
+                        await fs.writeFile(
+                            join(OUTPUT_DIR, 'vuln__' + flattenFilename(f.filename) + '.ast.txt'),
+                            stdout
+                        )
+                    }
+
+                    console.log(`${repo.full_name} ${commit.sha}: compile parent, ${f.filename}, ${error ? 'errored' : 'ok'}`)
                 }
-                if (stdout.length > 0) {
-                    await fs.writeFile(
-                        join(OUTPUT_DIR, 'vuln_' + flattenFilename(f.filename) + '.ast.txt'),
-                        stdout
-                    )
-                }
-            }
 
-            // compile fixed version
-            await execFile('git', [
-                'checkout',
-                '-f',
-                commit.sha
-            ])
+                // compile fixed version
+                await execFile('git', [
+                    'checkout',
+                    '-f',
+                    commit.sha
+                ], { cwd: workingDir.name })
 
-            console.log('-------- compiling current commit')
-
-            for (const f of sources) {
-                const {
-                    error,
-                    stdout,
-                    stderr
-                } = await generateAst(f.filename)
-
-                console.log(stderr)
-
-                if (stderr.length > 0) {
-                    await fs.writeFile(
-                        join(OUTPUT_DIR, 'fixed_' + flattenFilename(f.filename) + '.stderr.txt'),
+                for (const f of sources) {
+                    const {
+                        error,
+                        stdout,
                         stderr
-                    )
+                    } = await generateAst(f.filename, workingDir.name)
+
+                    nError += error ? 1 : 0
+
+                    if (stderr.length > 0) {
+                        await fs.writeFile(
+                            join(OUTPUT_DIR, 'fixed__' + flattenFilename(f.filename) + '.stderr.txt'),
+                            stderr
+                        )
+                    }
+
+                    if (stdout.length > 2) {
+                        nFixedAst += 1
+                        await fs.writeFile(
+                            join(OUTPUT_DIR, 'fixed__' + flattenFilename(f.filename) + '.ast.txt'),
+                            stdout
+                        )
+                    }
+
+                    console.log(`${repo.full_name} ${commit.sha}: compile current, ${f.filename}, ${error ? 'errored' : 'ok'}`)
                 }
 
-                if (stdout.length > 0) {
-                    await fs.writeFile(
-                        join(OUTPUT_DIR, 'fixed_' + flattenFilename(f.filename) + '.ast.txt'),
-                        stdout
-                    )
-                }
+                console.log(`${repo.full_name} ${commit.sha}: nVulnAst = ${nVulnAst}, nFixedAst = ${nFixedAst}, nError = ${nError}`)
+                nOk += (nError === 0 ? 1 : 0)
+                nFullAst += (nVulnAst === nFixedAst && nVulnAst === sources.length ? 1 : 0)
+                nPartialAst += (nVulnAst !== nFixedAst || nVulnAst !== sources.length ? 1 : 0)
+            } catch(e) {
+                console.log(`Error: ${repo.full_name} ${commit.sha}: ${e.message}`)
+                console.log(`    ${e.stack}`)
+                nSeriousError += 1
+            } finally {
+                workingDir.removeCallback()
             }
-
-            process.chdir('/tmp')
         }
     )
+
+    console.log(`nOk = ${nOk}, nFullAst = ${nFullAst}, nPartialAst = ${nPartialAst}, nSeriousError = ${nSeriousError} / nStarted = ${nStarted}`)
 }
