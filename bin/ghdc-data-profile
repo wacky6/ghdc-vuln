@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-const yargs = require('yargs')
-
 require('../profile')(
     require('yargs')
         .usage('$0 <data-dir>', 'profile collected ghdc-vuln data', yargs =>

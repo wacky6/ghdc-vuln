@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-const yargs = require('yargs')
 const { parseDateRange } = require('../lib/date-range')
 
 require('../index')(

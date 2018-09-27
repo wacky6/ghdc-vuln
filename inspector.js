@@ -120,3 +120,5 @@ module.exports = function(opts) {
     app.listen(opts.port)
     console.log(`Server started at :${opts.port}`)
 }
+
+module.exports.readGzFile = readGzFile

@@ -1,0 +1,17 @@
+#!/usr/bin/env node
+
+require('../blind-ast')(
+    require('yargs')
+        .usage('$0 [options] <data-dir> <output-dir>', 'profile collected ghdc-vuln data', yargs => yargs
+            .positional('data-dir', {
+                describe: 'root data directory (contains commits/ directory)',
+                type: 'string'
+            })
+            .positional('output-dir', {
+                describe: 'output dir',
+                type: 'string',
+                default: '/output/'
+            })
+        )
+        .argv
+)
