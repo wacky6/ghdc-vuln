@@ -12,6 +12,11 @@ require('../blind-ast')(
                 type: 'string',
                 default: '/output/'
             })
+            .option('c', {
+                alias: 'cache-dir',
+                type: 'string',
+                default: '/ghdc-repo-cache/'
+            })
         )
         .argv
 )
