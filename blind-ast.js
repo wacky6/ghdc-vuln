@@ -42,6 +42,10 @@ function flattenFilename(filename) {
     return filename.replace(/\//g, '__')
 }
 
+function sum(a) {
+    return a.reduce((a,v) => a+v, 0)
+}
+
 module.exports = async function(opts) {
     const dataDir = opts.dataDir
     const commitDir = join(dataDir, 'commits')
@@ -55,6 +59,7 @@ module.exports = async function(opts) {
     let nFullAst = 0
     let nPartialAst = 0
     let nSeriousError = 0
+    let nAstDiff = 0
 
     const buildingCache = {}
 
@@ -139,6 +144,8 @@ module.exports = async function(opts) {
                     commit.parents[0].sha
                 ], { cwd: workingDir.name })
 
+                let vulnSize = []
+
                 for (const f of sources) {
                     const {
                         error,
@@ -156,6 +163,7 @@ module.exports = async function(opts) {
                     }
                     if (stdout.length > 2) {
                         nVulnAst += 1
+                        vulnSize.push(stdout.length)
                         await fs.writeFile(
                             join(OUTPUT_DIR, 'vuln__' + flattenFilename(f.filename) + '.ast.txt'),
                             stdout
@@ -171,6 +179,9 @@ module.exports = async function(opts) {
                     '-f',
                     commit.sha
                 ], { cwd: workingDir.name })
+
+
+                let fixedSize = []
 
                 for (const f of sources) {
                     const {
@@ -190,6 +201,7 @@ module.exports = async function(opts) {
 
                     if (stdout.length > 2) {
                         nFixedAst += 1
+                        fixedSize.push(stdout.length)
                         await fs.writeFile(
                             join(OUTPUT_DIR, 'fixed__' + flattenFilename(f.filename) + '.ast.txt'),
                             stdout
@@ -199,10 +211,11 @@ module.exports = async function(opts) {
                     console.log(`${repo.full_name} ${commit.sha}: compile current, ${f.filename}, ${error ? 'errored' : 'ok'}`)
                 }
 
-                console.log(`${repo.full_name} ${commit.sha}: nVulnAst = ${nVulnAst}, nFixedAst = ${nFixedAst}, nError = ${nError}`)
+                console.log(`${repo.full_name} ${commit.sha}: nVulnAst = ${nVulnAst}, nFixedAst = ${nFixedAst}, nError = ${nError}, AstDiff = ${sum(vulnSize)}/${sum(fixedSize)}`)
                 nOk += (nError === 0 ? 1 : 0)
                 nFullAst += (nVulnAst === nFixedAst && nVulnAst === sources.length ? 1 : 0)
                 nPartialAst += (nVulnAst !== nFixedAst || nVulnAst !== sources.length ? 1 : 0)
+                nAstDiff += (sum(vulnSize) !== sum(fixedSize) ? 1 : 0)
             } catch(e) {
                 console.log(`Error: ${repo.full_name} ${commit.sha}: ${e.message}`)
                 console.log(`    ${e.stack}`)
@@ -213,5 +226,5 @@ module.exports = async function(opts) {
         }
     )
 
-    console.log(`nOk = ${nOk}, nFullAst = ${nFullAst}, nPartialAst = ${nPartialAst}, nSeriousError = ${nSeriousError} / nStarted = ${nStarted}`)
+    console.log(`nOk = ${nOk}, nFullAst = ${nFullAst}, nAstDiff = ${nAstDiff}, nSeriousError = ${nSeriousError} / nStarted = ${nStarted}`)
 }
