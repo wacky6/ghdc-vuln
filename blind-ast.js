@@ -25,6 +25,11 @@ function asyncMap(coll, limit, fn) {
 function generateAst(filepath, cwd) {
     return execFile('clang', [
         '-cc1',
+
+        // common include path
+        '-I', '.',
+        '-I', 'src',
+
         '-ast-dump',
         filepath
     ], { maxBuffer: 64 * 1024 * 1024, cwd }).then(
