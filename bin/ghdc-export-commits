@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+
+require('../export-commit')(
+    require('yargs')
+        .usage('$0 <data-dir> <output-dir>', 'profile collected ghdc-vuln data', yargs => yargs
+            .positional('data-dir', {
+                describe: 'root data directory (contains commits/ directory)',
+                type: 'string'
+            })
+            .positional('output-dir', {
+                describe: 'output directory',
+                type: 'string',
+                default: './output/'
+            })
+        )
+        .option('c', {
+            alias: 'cache-dir',
+            type: 'string',
+            default: '/ghdc-repo-cache/'
+        })
+        .argv
+)
