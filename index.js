@@ -1,5 +1,4 @@
 const shortid = require('shortid')
-const persistence = require('./lib/persistence')
 const {
     GithubApiFetcher,
     GithubResourceFetcher
@@ -41,9 +40,10 @@ module.exports = function ghdc_vuln(opts) {
     const repoFetcher = new GithubApiFetcher(opts.name + '-repo')
     const resourceFetcher = new GithubResourceFetcher(opts.name)
 
-    searchFetcher.setRequestPrecondition(_ => commitFetcher.getNumberOfTasks() < 50 && repoFetcher.getNumberOfTasks() < 50)
-    commitFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 100)
-    repoFetcher.setRequestPrecondition(_ => resourceFetcher.getNumberOfTasks() < 100)
+    // prevent queue build up, which could blow up server memory
+    searchFetcher.setRequestPrecondition(_ => commitFetcher.getStat().nPending < 50 && repoFetcher.getStat().nPending < 50)
+    commitFetcher.setRequestPrecondition(_ => resourceFetcher.getStat().nPending < 100)
+    repoFetcher.setRequestPrecondition(_ => resourceFetcher.getStat().nPending < 100)
 
     const taskPath = join(OUTPUT_DIR, opts.name)
     const commitDataPath = join(taskPath, 'commits')
@@ -76,22 +76,35 @@ module.exports = function ghdc_vuln(opts) {
     const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
 
     function printStatistic() {
-        const sr = searchFetcher.getNumberOfTasks()
-        const srf = searchFetcher.getNumberOfFinishedTasks()
-        const cm = commitFetcher.getNumberOfTasks()
-        const cmf = commitFetcher.getNumberOfFinishedTasks()
-        const rp = repoFetcher.getNumberOfTasks()
-        const rpf = repoFetcher.getNumberOfFinishedTasks()
-        const rc = resourceFetcher.getNumberOfTasks()
-        const rcf = resourceFetcher.getNumberOfFinishedTasks()
+        const {
+            nPending: sp,
+            nFinished: sf,
+            nError: se,
+        } = searchFetcher.getStat()
+        const {
+            nPending: cp,
+            nFinished: cf,
+            nError: ce,
+        } = commitFetcher.getStat()
+        const {
+            nPending: pp,
+            nFinished: pf,
+            nError: pe,
+        } = repoFetcher.getStat()
+        const {
+            nPending: rp,
+            nFinished: rf,
+            nError: re,
+        } = resourceFetcher.getStat()
         const rss = process.memoryUsage().rss
-        winston.info(`stat: sr=${sr}/${srf}, cm=${cm}/${cmf}, rp=${rp}/${rpf}, rc=${rc}/${rcf}, rss=${bytes(rss)}`)
+
+        winston.info(`stat: sr=${sp}/${sf}:${se}, cm=${cp}/${cf}:${ce}, rp=${pp}/${pf}:${pe}, rc=${rp}/${rf}:${re}, rss=${bytes(rss)}`)
     }
 
     setInterval(printStatistic, 30 * 1000).unref()
 
     searchFetcher.on('response', (searchResult, { requestOpts }, resp) => {
-        winston.info(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
+        winston.verbose(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
         for (const item of searchResult.items) {
             if (isInBloomFilter(item.sha)) {
                 // caught an incompetent ape, write it down
@@ -145,7 +158,7 @@ module.exports = function ghdc_vuln(opts) {
                     }, { repo, commit, file })
                 }
             }
-            winston.info(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files queued`)
+            winston.verbose(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files queued`)
         } else {
             // write a manifest
             const manifestPath = join(sourceDataPath, '__ghdc_manifest.json')
@@ -161,7 +174,7 @@ module.exports = function ghdc_vuln(opts) {
             }))
             mkdirp(dirname(manifestPath))
             writeFile(manifestPath, JSON.stringify(manifest, null, '  '), _ => null)
-            winston.info(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files, manifest written`)
+            winston.verbose(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files, manifest written`)
         }
     })
 
