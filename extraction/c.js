@@ -1,4 +1,3 @@
-const fs = require('fs').promises
 const breakLines = require('../lib/break-lines')
 
 // NOTE: should rewrite to an appropriate parser
@@ -6,7 +5,7 @@ const breakLines = require('../lib/break-lines')
 function guessFunctionNameFromHeader(header) {
     const idxParn = header.indexOf('(')
     if (idxParn >= 0) {
-        const idxLastSpace = Math.max(header.slice(0, idxParn).lastIndexOf(' '), 0)
+        const idxLastSpace = Math.max(header.slice(0, idxParn).trim().lastIndexOf(' '), 0)
         return header.slice(idxLastSpace, idxParn).replace(/[^a-zA-Z0-9_]/g, '')
     } else {
         // can not guess

@@ -103,11 +103,11 @@ module.exports = async function(opts) {
                     for (const {name, before, after} of pairs) {
                         console.log(`Extracted\t${repo.full_name} ${commit.sha} ${name}`)
                         await fs.writeFile(
-                            join(OUTPUT_DIR, `${name}__${commit.sha}__vulne.txt`),
+                            join(OUTPUT_DIR, `${name}__${commit.sha}__vulne.${extensionSignature}`),
                             before
                         )
                         await fs.writeFile(
-                            join(OUTPUT_DIR, `${name}__${commit.sha}__fixed.txt`),
+                            join(OUTPUT_DIR, `${name}__${commit.sha}__fixed.${extensionSignature}`),
                             after
                         )
                     }
