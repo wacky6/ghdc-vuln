@@ -26,6 +26,8 @@ module.exports = async function(opts) {
     const BASE_OUTPUT_DIR = resolve(process.cwd(), opts.outputDir)
     const BASE_CACHE_DIR = opts.cacheDir ? resolve(process.cwd(), opts.cacheDir) : null
 
+    mkdirp(BASE_OUTPUT_DIR)
+
     const {
         isInBloomFilter,
         addToBloomFilter,
