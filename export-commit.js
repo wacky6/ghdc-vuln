@@ -17,6 +17,13 @@ function asyncMap(coll, limit, fn) {
 }
 
 const Extraction = require('./extraction')
+const hasInterestingFiles = files => {
+    for (const f of files) {
+        const extensionSignature = extname(f.filename).slice(1).toLowerCase()
+        if (extensionSignature in Extraction) return true
+    }
+    return false
+}
 
 module.exports = async function(opts) {
     const dataDir = opts.dataDir
@@ -59,7 +66,20 @@ module.exports = async function(opts) {
             } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
 
             // skip large diff (likely to be a huge merge)
-            if (commit.stats.total > 100) return
+            if (commit.stats.total > 20) return
+
+            // skip commits without files of interest
+            if (!hasInterestingFiles(commit.files)) return
+
+            // second stage deduplication, check commit time and header line
+            const { committer, message } = commit.commit
+            const commitSignature = `${committer.date} ${message.slice(0, message.indexOf('\n'))}`
+            if (isInBloomFilter(commitSignature)) {
+                writeToBloomFilterLog(`${repo.full_name}\t${commit.sha}\t${commitSignature}`)
+                return
+            } else {
+                addToBloomFilter(commitSignature)
+            }
 
             const workingDir = tmpdirSync({ unsafeCleanup: true })
 
@@ -68,16 +88,6 @@ module.exports = async function(opts) {
 
                 const OUTPUT_DIR = join(BASE_OUTPUT_DIR, repo.full_name)
                 mkdirp(OUTPUT_DIR)
-
-                // second stage deduplication, check commit time and header line
-                const { committer, message } = commit.commit
-                const commitSignature = `${committer.date} ${message.slice(message.indexOf('\n'))}`
-                if (isInBloomFilter(commitSignature)) {
-                    writeToBloomFilterLog(`${repo.full_name}\t${commit.sha}\t${commitSignature}`)
-                    return
-                } else {
-                    addToBloomFilter(commitSignature)
-                }
 
                 await fetchRepositoryTo(
                     repo.clone_url,
