@@ -20,16 +20,18 @@ that changes in both the original commit and the patched commit.
 
 See [Diff - Unified format]https://en.wikipedia.org/wiki/Diff#Unified_format for diff's format.
 
-### `extractFunctionFromHeaders(file, headings) -> [{name, body}, ...]`
+### `extractFunctionFromHeaders(fileBuf1, fileBuf2, headings) -> [Pair, ...]`
 
-`file` is the absolute path to source code file
+`fileBuf1` is file content before patch
+`fileBuf2` is file content after patch
 
 `headings` is the list of headings, as is extracted by `extractFunctionFromHeaders`, of this file
 
-Function returns an Object with following properties:
+Function returns an array of Pair object, each pair object has the following format:
 
 * `name`: the function's name (or unique descriptor), should only contain filename friendly character
-* `body`: the function's body, it will be written to output
+* `before`: the function's body, before patch
+* `after`: the function's body, after patch
 
 ---
 

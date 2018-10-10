@@ -55,7 +55,7 @@ async function buildCommitCache(dataDir) {
                 stars: repo.stargazers_count,
                 githubUrl: commit.html_url,
                 title: commit.commit.message.split('\n')[0],
-                time: new Date(commit.commit.committer.date).getTime(),
+                time: new Date(commit.commit.author.date).getTime(),
                 files: commit.files.length,
                 additions: commit.stats.additions,
                 deletions: commit.stats.deletions,

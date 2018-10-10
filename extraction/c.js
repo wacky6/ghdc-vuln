@@ -1,4 +1,5 @@
 const fs = require('fs').promises
+const breakLines = require('../lib/break-lines')
 
 // NOTE: should rewrite to an appropriate parser
 //       current heuristic guess works ok though.
@@ -13,43 +14,50 @@ function guessFunctionNameFromHeader(header) {
     }
 }
 
-module.exports = {
-    extractFunctionFromHeaders(file, headers) {
-        return fs.readFile(file, {encoding: 'utf-8'}).then(buf => {
-            let ret = []
-            const lines = buf.split(/[\n\r]+/)
-            for (let i = 0; i < lines.length; ++i) {
-                const header = headers.find(header => lines[i].includes(header))
-                if (!header) continue
+function extractFromHeader(lines, header) {
+    for (let i = 0; i < lines.length; ++i) {
+        if (!lines[i].includes(header)) continue
 
-                // start extraction based on bracket level / depth
-                let fnBody = ''
-                let bracketLevel = 0
-                let encounteredFirstBracket = false
-                while (
-                    i < lines.length
-                    && (!encounteredFirstBracket || bracketLevel > 0)
-                ) {
-                    for (const ch of lines[i]) {
-                        if (ch === '{') {
-                            bracketLevel += 1
-                            encounteredFirstBracket = true
-                        }
-                        if (ch === '}') {
-                            bracketLevel -= 1
-                        }
-                    }
-                    fnBody += (lines[i] + '\n')
-                    ++i
+        // start extraction based on bracket level / depth
+        let fnBody = ''
+        let bracketLevel = 0
+        let encounteredFirstBracket = false
+        while (
+            i < lines.length
+            && (!encounteredFirstBracket || bracketLevel > 0)
+        ) {
+            for (const ch of lines[i]) {
+                if (ch === '{') {
+                    bracketLevel += 1
+                    encounteredFirstBracket = true
                 }
-
-                ret.push({
-                    name: guessFunctionNameFromHeader(header),
-                    body: fnBody
-                })
+                if (ch === '}') {
+                    bracketLevel -= 1
+                }
             }
-            return ret
-        })
+            fnBody += (lines[i] + '\n')
+            ++i
+        }
+
+        return fnBody
+    }
+    return ''
+}
+
+function isTruthy(o) {
+    return o
+}
+
+module.exports = {
+    extractFunctionFromHeaders(buf1, buf2, headers) {
+        const lines1 = breakLines(buf1)
+        const lines2 = breakLines(buf2)
+
+        return headers.map(header => ({
+            name: guessFunctionNameFromHeader(header),
+            before: extractFromHeader(lines1, header),
+            after: extractFromHeader(lines2, header)
+        })).filter(isTruthy)
     },
     extractFunctionPatchHeadings(diff) {
         return [
