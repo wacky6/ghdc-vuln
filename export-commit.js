@@ -58,6 +58,9 @@ module.exports = async function(opts) {
                 repo
             } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
 
+            // skip large diff (likely to be a huge merge)
+            if (commit.stats.total > 100) return
+
             const workingDir = tmpdirSync({ unsafeCleanup: true })
 
             try {
