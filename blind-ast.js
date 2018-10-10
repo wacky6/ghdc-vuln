@@ -9,6 +9,8 @@ const mkdirp = require('mkdirp').sync
 const tmpdirSync = require('tmp').dirSync
 
 const { readGzFile } = require('./inspector')
+const fetchRepositoryTo = require('./lib/repo-cache')
+const { checkout: gitCheckout } = require('./lib/git-call')
 
 const COMMIT_FILTER = (commit, repo) =>
     repo.language === 'C'
@@ -61,8 +63,6 @@ module.exports = async function(opts) {
     let nSeriousError = 0
     let nAstDiff = 0
 
-    const buildingCache = {}
-
     await asyncMap(
         commitFiles,
         require('os').cpus().length,
@@ -91,46 +91,12 @@ module.exports = async function(opts) {
                 const OUTPUT_DIR = join(BASE_OUTPUT_DIR, COMMIT_DIR)
                 mkdirp(OUTPUT_DIR)
 
-                if (BASE_CACHE_DIR) {
-                    // create repo cache
-                    const cachedRepoDir = join(BASE_CACHE_DIR, repo.full_name)
-                    const cacheRepoExists = await fs.access(cachedRepoDir).then(_ => true, _ => false)
-                    if (!cacheRepoExists && !buildingCache[repo.full_name]) {
-                        // not in cache, not building, fetch to cache dir
-                        mkdirp(cachedRepoDir)
-                        console.log(`${repo.full_name} cache miss`)
-                        buildingCache[repo.full_name] = execFile('git', [
-                                'clone',
-                                repo.clone_url,
-                                cachedRepoDir
-                            ], { maxBuffer: 64 * 1024 * 1024, cwd: workingDir.name }
-                        )
-                        await buildingCache[repo.full_name]
-                        delete buildingCache[repo.full_name]
-                        console.log(`${repo.full_name} cache built`)
-                    } else {
-                        if (buildingCache[repo.full_name]) {
-                            console.log(`${repo.full_name} waiting for cache completion`)
-                            await buildingCache[repo.full_name]
-                            console.log(`${repo.full_name} cache built, resume`)
-                        } else {
-                            console.log(`${repo.full_name} cache hit`)
-                        }
-                    }
-
-                    // clone cache to working dir
-                    await execFile('git', [
-                        'clone',
-                        cachedRepoDir,
-                        workingDir.name
-                    ], { maxBuffer: 64 * 1024 * 1024, cwd: workingDir.name })
-                } else {
-                    await execFile('git', [
-                        'clone',
-                        repo.clone_url,
-                        workingDir.name
-                    ], { maxBuffer: 64 * 1024 * 1024, cwd: workingDir.name })
-                }
+                await fetchRepositoryTo(
+                    repo.clone_url,
+                    repo.full_name,
+                    workingDir.name,
+                    BASE_CACHE_DIR
+                )
 
                 const sources = commit.files.filter(file =>
                     extname(file.filename).toLowerCase() === '.c'
@@ -138,11 +104,7 @@ module.exports = async function(opts) {
                 )
 
                 // compile vuln version
-                await execFile('git', [
-                    'checkout',
-                    '-f',
-                    commit.parents[0].sha
-                ], { cwd: workingDir.name })
+                await gitCheckout(commit.parents[0].sha, workingDir.name)
 
                 let vulnSize = []
 
@@ -174,12 +136,7 @@ module.exports = async function(opts) {
                 }
 
                 // compile fixed version
-                await execFile('git', [
-                    'checkout',
-                    '-f',
-                    commit.sha
-                ], { cwd: workingDir.name })
-
+                await gitCheckout(commit.sha, workingDir.name)
 
                 let fixedSize = []
 
