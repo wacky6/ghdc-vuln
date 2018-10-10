@@ -66,13 +66,6 @@ module.exports = async function(opts) {
                 const OUTPUT_DIR = join(BASE_OUTPUT_DIR, repo.full_name)
                 mkdirp(OUTPUT_DIR)
 
-                await fetchRepositoryTo(
-                    repo.clone_url,
-                    repo.full_name,
-                    workingDir.name,
-                    BASE_CACHE_DIR
-                )
-
                 // second stage deduplication, check commit time and header line
                 const { committer, message } = commit.commit
                 const commitSignature = `${committer.date} ${message.slice(message.indexOf('\n'))}`
@@ -82,6 +75,13 @@ module.exports = async function(opts) {
                 } else {
                     addToBloomFilter(commitSignature)
                 }
+
+                await fetchRepositoryTo(
+                    repo.clone_url,
+                    repo.full_name,
+                    workingDir.name,
+                    BASE_CACHE_DIR
+                )
 
                 // candicate files (those modified by patch, ignore add / delete)
                 const sources = commit.files.filter(file => file.status === 'modified')
