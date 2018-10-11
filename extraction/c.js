@@ -27,7 +27,7 @@ function extractFromHeader(lines, header, hint) {
 
     // find the hit that is closest to patched location
     const startLine = hits.sort((a, b) => Math.abs(a-hint) - Math.abs(b-hint))[0]
-    if (!startLine) return null
+    if (!startLine) return ''
 
     let fnBody = ''
     // check previous line for type
@@ -79,7 +79,7 @@ module.exports = {
                 before: extractFromHeader(lines1, fnSignature, ls),
                 after: extractFromHeader(lines2, fnSignature, rs)
             }
-        }).filter(pair => pair && pair.before !== pair.after && pair.name)
+        }).filter(pair => pair && pair.before !== pair.after && pair.name && pair.before && pair.after)
     },
     extractFunctionPatchHeadings(diff) {
         return [
