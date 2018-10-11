@@ -43,10 +43,6 @@ function extractFromHeader(lines, header) {
     return ''
 }
 
-function isTruthy(o) {
-    return o
-}
-
 module.exports = {
     extractFunctionFromHeaders(buf1, buf2, headers) {
         const lines1 = breakLines(buf1)
@@ -56,7 +52,7 @@ module.exports = {
             name: guessFunctionNameFromHeader(header),
             before: extractFromHeader(lines1, header),
             after: extractFromHeader(lines2, header)
-        })).filter(isTruthy)
+        })).filter(pair => pair && pair.before !== pair.after && pair.name)
     },
     extractFunctionPatchHeadings(diff) {
         return [

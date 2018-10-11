@@ -28,8 +28,8 @@ module.exports = async function(opts) {
     const commitDir = join(dataDir, 'commits')
     const commitFiles = await fs.readdir(commitDir)
 
-    const BASE_OUTPUT_DIR = resolve(process.cwd(), opts.outputDir)
-    mkdirp(BASE_OUTPUT_DIR)
+    const OUTPUT_DIR = resolve(process.cwd(), opts.outputDir)
+    mkdirp(OUTPUT_DIR)
 
     const {
         isInBloomFilter,
@@ -44,7 +44,7 @@ module.exports = async function(opts) {
             }
         }
         const bloomFilter = BloomFilter.create(1e7, 1e-5)    // may miss 100 items in 10,000,000
-        const bloomFilterLog = createWriteStream(join(BASE_OUTPUT_DIR, 'duplicate-commits.txt'))
+        const bloomFilterLog = createWriteStream(join(OUTPUT_DIR, 'duplicate-commits.txt'))
         return {
             isInBloomFilter: str => bloomFilter.contains(str),
             addToBloomFilter: str => bloomFilter.insert(str),
@@ -78,9 +78,6 @@ module.exports = async function(opts) {
             }
 
             try {
-                const OUTPUT_DIR = join(BASE_OUTPUT_DIR, repo.full_name)
-                mkdirp(OUTPUT_DIR)
-
                 // candicate files (those modified by patch, ignore add / delete)
                 const sources = commit.files.filter(file => file.status === 'modified')
 
