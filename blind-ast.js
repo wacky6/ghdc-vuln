@@ -8,7 +8,7 @@ const async = require('async')
 const mkdirp = require('mkdirp').sync
 const tmpdirSync = require('tmp').dirSync
 
-const { readGzFile } = require('./inspector')
+const readGzFile = require('./lib/read-gz')
 const fetchRepositoryTo = require('./lib/repo-cache')
 const { checkout: gitCheckout } = require('./lib/git-call')
 

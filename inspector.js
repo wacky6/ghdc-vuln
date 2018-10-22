@@ -2,13 +2,12 @@ const Koa = require('koa')
 const KoaViews = require('koa-views')
 const KoaStatic = require('koa-static')
 const KoaRouter = require('koa-router')
-const zlib = require('zlib')
-const promisify = require('util').promisify
-const gunzip = promisify(zlib.gunzip)
 const bytes = require('bytes')
+const readGzFile = require('./lib/read-gz')
+const BloomFilter = require('bloom-filter')
 
 const fs = require('fs').promises
-const { join, extname, resolve, basename } = require('path')
+const { join, resolve, basename } = require('path')
 const async = require('async')
 
 function asyncMap(coll, limit, fn) {
@@ -17,17 +16,12 @@ function asyncMap(coll, limit, fn) {
     })
 }
 
-function unpackBuffer(encoding) {
-    return encoding ? buf => buf.toString(encoding) : buf => buf
-}
-
-async function readGzFile(filename, encoding = null) {
-    if (extname(filename).toLocaleLowerCase() === '.gz') {
-        return fs.readFile(filename, {encoding: null}).then(gunzip).then(unpackBuffer(encoding))
-    } else {
-        return fs.readFile(filename, {encoding})
-    }
-}
+// calculate metrics
+let perLanguage = {}
+let uniqPerLanguage = {}
+let uniqPerYear = {}
+let uniqDelta = []
+const bloomFilter = BloomFilter.create(1e7, 1e-5)
 
 // resolve to getter function that returns a list of commits
 async function buildCommitCache(dataDir) {
@@ -48,14 +42,29 @@ async function buildCommitCache(dataDir) {
 
             if (++done % 500 === 0) console.log(`Commit cache progress: ${done} / ${commitFiles.length}, rss: ${bytes(process.memoryUsage().rss)}`)
 
+            const language = repo.language
+            const authorDate = new Date(commit.commit.author.date)
+            const message =commit.commit.message
+            const year = authorDate.getFullYear()
+            const commitSignature = `${authorDate} ${message.slice(0, message.indexOf('\n'))}`
+
+            perLanguage[language] = perLanguage[language] + 1 || 1
+
+            if (!bloomFilter.contains(commitSignature)) {
+                bloomFilter.insert(commitSignature)
+                uniqPerLanguage[language] = uniqPerLanguage[language] + 1 || 1
+                uniqPerYear[year] = uniqPerYear[year] + 1 || 1
+                uniqDelta.push(Math.max(commit.stats.additions, commit.stats.deletions))
+            }
+
             return {
                 sha: commit.sha,
                 repo: repo.full_name,
-                language: repo.language,
+                language: language,
                 stars: repo.stargazers_count,
                 githubUrl: commit.html_url,
-                title: commit.commit.message.split('\n')[0],
-                time: new Date(commit.commit.author.date).getTime(),
+                title: message.split('\n')[0],
+                time: authorDate.getTime(),
                 files: commit.files.length,
                 additions: commit.stats.additions,
                 deletions: commit.stats.deletions,
@@ -63,6 +72,13 @@ async function buildCommitCache(dataDir) {
         },
     )
     console.log(`Commit cache built, rss: ${bytes(process.memoryUsage().rss)}`)
+
+    // write statistics to file
+    await fs.writeFile(join(dataDir, 'stat-language.json'), JSON.stringify(perLanguage, null, '  '))
+    await fs.writeFile(join(dataDir, 'stat-u-language.json'), JSON.stringify(uniqPerLanguage, null, '  '))
+    await fs.writeFile(join(dataDir, 'stat-u-year.json'), JSON.stringify(uniqPerYear, null, '  '))
+    await fs.writeFile(join(dataDir, 'stat-u-delta.txt'), uniqDelta.join('\n'))
+    console.log('Statistics written.')
     return () => commits
 }
 
@@ -120,5 +136,3 @@ module.exports = function(opts) {
     app.listen(opts.port)
     console.log(`Server started at :${opts.port}`)
 }
-
-module.exports.readGzFile = readGzFile

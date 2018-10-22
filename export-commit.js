@@ -5,7 +5,7 @@ const async = require('async')
 const mkdirp = require('mkdirp').sync
 const BloomFilter = require('bloom-filter')
 
-const { readGzFile } = require('./inspector')
+const readGzFile = require('./lib/read-gz')
 const urlFetch = require('./lib/url-fetch')
 
 function asyncMap(coll, limit, fn) {
