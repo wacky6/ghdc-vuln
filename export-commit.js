@@ -1,20 +1,14 @@
 const fs = require('fs').promises
-const { createWriteStream } = require('fs')
 const { join, extname, resolve } = require('path')
-const async = require('async')
+const asyncMap = require('./lib/async-map')
 const mkdirp = require('mkdirp').sync
 const BloomFilter = require('bloom-filter')
-
-const readGzFile = require('./lib/read-gz')
+const { readGzJson, isGzJson } = require('./lib/read-gz')
 const urlFetch = require('./lib/url-fetch')
-
-function asyncMap(coll, limit, fn) {
-    return new Promise((resolve, reject) => {
-        async.mapLimit(coll, limit, fn, (err, results) => !err ? resolve(results) : reject(err))
-    })
-}
-
 const Extraction = require('./extraction')
+
+// filter files to extract here
+// by default, all files that has a corresponding extraction module will be extracted
 const hasInterestingFiles = files => {
     for (const f of files) {
         const extensionSignature = extname(f.filename).slice(1).toLowerCase()
@@ -23,7 +17,13 @@ const hasInterestingFiles = files => {
     return false
 }
 
-module.exports = async function(opts) {
+// the maximum commit (changes of lines) to consider for extraction
+// commits that modifies more than LARGE_DIFF_LIMIT lines are skipped
+const LARGE_DIFF_LIMIT = 20
+
+// perform extraction on commit
+// output extracted file to destination
+module.exports = async function ghdcExportCommit(opts) {
     const dataDir = opts.dataDir
     const commitDir = join(dataDir, 'commits')
     const commitFiles = await fs.readdir(commitDir)
@@ -34,54 +34,41 @@ module.exports = async function(opts) {
     const {
         isInBloomFilter,
         addToBloomFilter,
-        writeToBloomFilterLog,
     } = (() => {
         if (!opts.bloomFilter) {
             return {
                 isInBloomFilter: () => false,
                 addToBloomFilter: () => undefined,
-                writeToBloomFilterLog: () => undefined,
             }
         }
-        const bloomFilter = BloomFilter.create(1e7, 1e-5)    // may miss 100 items in 10,000,000
-        const bloomFilterLog = createWriteStream(join(OUTPUT_DIR, 'duplicate-commits.txt'))
+        const bloomFilter = BloomFilter.create(1e7, 1e-5)
         return {
             isInBloomFilter: str => bloomFilter.contains(str),
             addToBloomFilter: str => bloomFilter.insert(str),
-            writeToBloomFilterLog: msg => bloomFilterLog.write(`${msg}\n`)
         }
     })()
 
     await asyncMap(
-        commitFiles,
+        commitFiles.filter(isGzJson),
         1,    // do not run parallel fetch
         async filename => {
-            const {
-                commit,
-                repo
-            } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
+            const { commit, repo } = await readGzJson(join(commitDir, filename))
 
             // skip large diff (likely to be a huge merge)
-            if (commit.stats.total > 20) return
+            if (commit.stats.total > LARGE_DIFF_LIMIT) return
 
             // skip commits without files of interest
             if (!hasInterestingFiles(commit.files)) return
 
-            // second stage deduplication, check commit time and header line
-            const { author, message } = commit.commit
-            const commitSignature = `${author.date} ${message.slice(0, message.indexOf('\n'))}`
-            if (isInBloomFilter(commitSignature)) {
-                writeToBloomFilterLog(`${repo.full_name}\t${commit.sha}\t${commitSignature}`)
-                return
-            } else {
-                addToBloomFilter(commitSignature)
-            }
-
             try {
                 // candicate files (those modified by patch, ignore add / delete)
-                const sources = commit.files.filter(file => file.status === 'modified')
+                const sources = commit.files
+                    .filter(file => file.status === 'modified')
+                    .filter(file => !isInBloomFilter(file.sha))
 
                 for (const f of sources) {
+                    addToBloomFilter(f.sha)
+
                     const extensionSignature = extname(f.filename).slice(1).toLowerCase()
                     if (!Extraction[extensionSignature]) continue
 
@@ -92,11 +79,13 @@ module.exports = async function(opts) {
 
                     const parentSha = commit.parents[0].sha
 
+                    // fetch file in parent and current commit
                     const vulneFileBuf = await urlFetch(`https://github.com/${repo.full_name}/raw/${parentSha}/${f.filename}`)
                     const fixedFileBuf = await urlFetch(`https://github.com/${repo.full_name}/raw/${commit.sha}/${f.filename}`)
 
                     const pairs = await extractFunctionFromHeaders(vulneFileBuf, fixedFileBuf, extractFunctionPatchHeadings(f.patch))
 
+                    // write extracted objects to file
                     for (const {name, before, after} of pairs) {
                         console.log(`Extracted\t${repo.full_name} ${commit.sha} ${name}`)
                         await fs.writeFile(
