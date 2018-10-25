@@ -3,26 +3,23 @@ const promisify = require('util').promisify
 const execFile = promisify(_execFile)
 
 const fs = require('fs').promises
-const { join, extname, resolve, basename } = require('path')
-const async = require('async')
+const { join, extname, resolve } = require('path')
 const mkdirp = require('mkdirp').sync
 const tmpdirSync = require('tmp').dirSync
 
-const readGzFile = require('./lib/read-gz')
-const fetchRepositoryTo = require('./lib/repo-cache')
+const { readGzJson, isGzJson } = require('./lib/read-gz')
+const asyncMap = require('./lib/async-map')
+
+const { fetchRepositoryTo } = require('./lib/repo-cache')
 const { checkout: gitCheckout } = require('./lib/git-call')
 
+// filter commits to extract here
+// by default, extract C files in C projects that has less than 30 lines of modification
 const COMMIT_FILTER = (commit, repo) =>
     repo.language === 'C'
     && commit.files.length > 0
     && commit.stats.additions <= 30
     && commit.files.find(file => extname(file.filename).toLowerCase() === '.c')
-
-function asyncMap(coll, limit, fn) {
-    return new Promise((resolve, reject) => {
-        async.mapLimit(coll, limit, fn, (err, results) => !err ? resolve(results) : reject(err))
-    })
-}
 
 function generateAst(filepath, cwd) {
     return execFile('clang', [
@@ -48,7 +45,13 @@ function sum(a) {
     return a.reduce((a,v) => a+v, 0)
 }
 
-module.exports = async function(opts) {
+/*
+ * Clang Blind Ast build,
+ *
+ * Requires clang binaries to be installed
+ * Recommends to set up ramdisk, see README.md
+ */
+module.exports = async function ghdcBlindAst(opts) {
     const dataDir = opts.dataDir
     const commitDir = join(dataDir, 'commits')
     const commitFiles = await fs.readdir(commitDir)
@@ -59,24 +62,22 @@ module.exports = async function(opts) {
     let nStarted = 0
     let nOk = 0
     let nFullAst = 0
-    let nPartialAst = 0
     let nSeriousError = 0
     let nAstDiff = 0
 
     await asyncMap(
-        commitFiles,
+        commitFiles.filter(isGzJson),
         require('os').cpus().length,
         async filename => {
-            const {
-                commit,
-                repo
-            } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
+            const { commit, repo } = await readGzJson(join(commitDir, filename))
 
+            // filter unwanted commits
             if (!COMMIT_FILTER(commit, repo)) {
                 console.log(`skip: ${repo.full_name} ${commit.sha}`)
                 return null
             }
 
+            // create working path
             const workingDir = tmpdirSync({ unsafeCleanup: true })
             nStarted += 1
 
@@ -171,7 +172,6 @@ module.exports = async function(opts) {
                 console.log(`${repo.full_name} ${commit.sha}: nVulnAst = ${nVulnAst}, nFixedAst = ${nFixedAst}, nError = ${nError}, AstDiff = ${sum(vulnSize)}/${sum(fixedSize)}`)
                 nOk += (nError === 0 ? 1 : 0)
                 nFullAst += (nVulnAst === nFixedAst && nVulnAst === sources.length ? 1 : 0)
-                nPartialAst += (nVulnAst !== nFixedAst || nVulnAst !== sources.length ? 1 : 0)
                 nAstDiff += (sum(vulnSize) !== sum(fixedSize) ? 1 : 0)
             } catch(e) {
                 console.log(`Error: ${repo.full_name} ${commit.sha}: ${e.message}`)

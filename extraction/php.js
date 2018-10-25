@@ -1,8 +1,10 @@
 const breakLines = require('../lib/break-lines')
 
-// context lines
+// context window
+// set to very large integers to extract the whole file
 const PHP_CONTEXT_WINDOW = 50
 
+// parse patch's range hump to locate changes
 function parseRangeHump(hump) {
     if (!hump.startsWith('@@') || !hump.endsWith('@@')) return null
 
@@ -22,6 +24,8 @@ function parseRangeHump(hump) {
     }
 }
 
+// merge humps if they overlap
+// Unit Test: ../test/merge-humps
 function mergeHumps(humpStrs) {
     const humps = humpStrs.map(parseRangeHump).filter(isTruthy)
     if (!humps.length) return []

@@ -13,6 +13,8 @@ function guessFunctionNameFromHeader(header) {
     }
 }
 
+// extract function body from diff header
+// -> String
 function extractFromHeader(lines, header) {
     for (let i = 0; i < lines.length; ++i) {
         if (!lines[i].includes(header)) continue
