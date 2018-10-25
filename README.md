@@ -1,6 +1,6 @@
 ghdc-vuln
 ===
-GitHub Date Colelction - Vulnerable Source code
+GitHub Date Colelction - Vulnerable Source Code
 
 
 ## Data Storage Directory Structure
@@ -114,3 +114,18 @@ For docker usage (recommended):
 For non-Docker usage (Assuming an standalone server environment):
 * `mount -t tmpfs -o size=12G tmpfs /tmp/`; This will cause everything currently in `/tmp` to be inaccessible.
 * run program normally
+
+
+## For Developers: Directory Structure
+* `bin/`: executables (command line wrappers)
+* `extraction/`: source code extraction modules
+* `inspector/`: Web UI resources for data inspector
+* `lib/`: helper functions
+* `test/`: unit tests
+* `blind-ast.js`: clang AST generator implementation
+* `export-commit.js`: source code extractor implementation
+* `inspector.js`: source code inspector / playground implementation
+* `gh-collect.js`: GitHub data collector implementation
+* `profile.js`: commit profiler implementation
+* `Dockerfile`: Docker container specification
+* `package.json`, `yarn.lock`: library dependency specification
