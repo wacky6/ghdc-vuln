@@ -14,8 +14,13 @@ const bytes = require('bytes')
 const zlib = require('zlib')
 const BloomFilter = require('bloom-filter')
 
+// the maximum commit size we want to prefetch
+// if there are files more than this number, the commit is likely a big merge
+// in that case, the data will be very noisy
 const COMMIT_SIZE_UPPERBOUND_TO_FETCH = 10
 
+// returns a function used to write file based on compression flag
+// -> function(buffer)
 function createWriteFileFn(compression = null) {
     if (compression) {
         return (filepath, data, cbk) => {
@@ -27,24 +32,38 @@ function createWriteFileFn(compression = null) {
     }
 }
 
-module.exports = function ghdc_vuln(opts) {
+/*
+ * GitHub Collection Implementation
+ * Implementation of first pipeline stage of the project
+ */
+module.exports = function ghCollect(opts) {
+    // check command line options
     opts.name = opts.name || shortid()
-
+    const writeFile = createWriteFileFn(opts.gzip)
     const OUTPUT_DIR = opts.outputDir.replace(/^~/, homedir())
     winston.level = opts.verbose ? 'verbose' : 'info'
 
-    const writeFile = createWriteFileFn(opts.gzip)
-
+    // Search API and Commit / Repo. API use different rate limit policy
+    // They should have saperate fetchers to keep track of
     const searchFetcher = new GithubApiFetcher(opts.name + '-search')
     const commitFetcher = new GithubApiFetcher(opts.name + '-commit')
     const repoFetcher = new GithubApiFetcher(opts.name + '-repo')
+
+    // Resource Request are not rate limited
     const resourceFetcher = new GithubResourceFetcher(opts.name)
 
+    // setup GitHub API token if provided
+    // it's recommended to get one: https://blog.github.com/2013-05-16-personal-api-tokens/
+    // otherwise request rate limit is very low (10 per hour for commit/repo, 60 for search)
+    const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
+
     // prevent queue build up, which could blow up server memory
+    // limit requests based on downstream queue size
     searchFetcher.setRequestPrecondition(_ => commitFetcher.getStat().nPending < 50 && repoFetcher.getStat().nPending < 50)
     commitFetcher.setRequestPrecondition(_ => resourceFetcher.getStat().nPending < 100)
     repoFetcher.setRequestPrecondition(_ => resourceFetcher.getStat().nPending < 100)
 
+    // setup output directory structure
     const taskPath = join(OUTPUT_DIR, opts.name)
     const commitDataPath = join(taskPath, 'commits')
     const sourceDataPath = join(taskPath, 'sources')
@@ -52,6 +71,8 @@ module.exports = function ghdc_vuln(opts) {
     mkdirp(commitDataPath)
     mkdirp(sourceDataPath)
 
+    // set up bloom filter for commit hash deduplication
+    // records offending repositories and commits to output file
     const {
         isInBloomFilter,
         addToBloomFilter,
@@ -73,8 +94,7 @@ module.exports = function ghdc_vuln(opts) {
         }
     })()
 
-    const requestAuth = opts.token ? { auth: { username: opts.token, password: '' } } : {}
-
+    // print fetcher statistics, and memory usage
     function printStatistic() {
         const {
             nPending: sp,
@@ -100,14 +120,14 @@ module.exports = function ghdc_vuln(opts) {
 
         winston.info(`stat: sr=${sp}/${sf}:${se}, cm=${cp}/${cf}:${ce}, rp=${pp}/${pf}:${pe}, rc=${rp}/${rf}:${re}, rss=${bytes(rss)}`)
     }
-
     setInterval(printStatistic, 30 * 1000).unref()
 
+    // set search API's response handler
     searchFetcher.on('response', (searchResult, { requestOpts }, resp) => {
         winston.verbose(`ghdc: search ${requestOpts._query}, returned ${searchResult.items.length} items`)
         for (const item of searchResult.items) {
             if (isInBloomFilter(item.sha)) {
-                // caught an incompetent ape, write it down
+                // caught an offending commit, write it down
                 // do not queue this commit (because it has been fetched by another request)
                 writeToBloomFilterLog(`${item.sha}\t${item.repository.full_name}`)
                 continue
@@ -121,7 +141,7 @@ module.exports = function ghdc_vuln(opts) {
         }
 
         if (resp.headers['link']) {
-            // append next page if github header says there are more
+            // append the next page if github header says there are more
             const link = resp.headers['link']
             const posRelNext = link.indexOf('rel="next"')
             if (posRelNext >= 0) {
@@ -134,6 +154,8 @@ module.exports = function ghdc_vuln(opts) {
         }
     })
 
+    // set commit API's response handler
+    // it just queues to fetch commit's repository information
     commitFetcher.on('response', (commit) => {
         repoFetcher.queue({
             method: 'GET',
@@ -142,13 +164,18 @@ module.exports = function ghdc_vuln(opts) {
         }, { commit })
     })
 
+    // set repo API's response handler
+    // writes commit JSON to output
+    // decide whether to prefetch files in the commit
     repoFetcher.on('response', (repo, { commit }) => {
+        // write commit JSON to output
         const commitPrefix = repo.full_name + '/' + commit.sha
         const commitJsonPath = join(commitDataPath, `${commitPrefix.replace(/\//g, '__')}.json`)
         mkdirp(dirname(commitJsonPath))
         writeFile(commitJsonPath, JSON.stringify({ commit, repo }, null, '  '), _ => null)
 
-        // if commit changes are small (less than <some> files), fetch them
+        // if commit changes are small (less than <COMMIT_SIZE_UPPERBOUND_TO_FETCH> files), prefetch them
+        // NOTE: should also prefetch files in parent commit, so patch can be applied directly
         if (commit.files.length < COMMIT_SIZE_UPPERBOUND_TO_FETCH) {
             for (const file of commit.files) {
                 if (file.raw_url) {
@@ -160,8 +187,8 @@ module.exports = function ghdc_vuln(opts) {
             }
             winston.verbose(`ghdc: fetched ${repo.full_name}/${commit.sha}, ${commit.files.length} files queued`)
         } else {
-            // write a manifest
-            const manifestPath = join(sourceDataPath, '__ghdc_manifest.json')
+            // if commit size is large, write a manifest to record files to fetch
+            const manifestPath = join(sourceDataPath, `__ghdc_manifest__${commitPrefix}.json`)
             const manifest = commit.files.map(file => ({
                 sha: file.sha,
                 filename: file.filename,
@@ -178,6 +205,8 @@ module.exports = function ghdc_vuln(opts) {
         }
     })
 
+    // setup resource response's handler
+    // it just write files to output
     resourceFetcher.on('response', (buffer, {repo, commit, file}) => {
         const filePath = join(sourceDataPath, repo.full_name, commit.sha, file.filename)
         mkdirp(dirname(filePath))
@@ -185,8 +214,10 @@ module.exports = function ghdc_vuln(opts) {
     })
 
     // schedule tasks
+    // start the collection process
+    // collect from latest to oldest commit
     for (const dateRange of [...generateQueryDateRange(...opts.dateRange)].reverse()) {
-        const query = `committer-date:${dateRange} ${opts.query_term}`
+        const query = `author-date:${dateRange} ${opts.query_term}`
         const requestOpts = {
             method: 'GET',
             url: 'https://api.github.com/search/commits?' + qs.stringify({

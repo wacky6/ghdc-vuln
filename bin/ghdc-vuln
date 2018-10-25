@@ -2,7 +2,7 @@
 
 const { parseDateRange } = require('../lib/date-range')
 
-require('../index')(
+require('../gh-collect')(
     require('yargs')
         .usage('$0 [options] <query_term>', 'collect patch and source code from github', yargs =>
             yargs.positional('query-term', {
