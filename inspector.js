@@ -3,27 +3,23 @@ const KoaViews = require('koa-views')
 const KoaStatic = require('koa-static')
 const KoaRouter = require('koa-router')
 const bytes = require('bytes')
-const readGzFile = require('./lib/read-gz')
+const asyncMap = require('./lib/async-map')
+const fs = require('fs').promises
+const { readGzJson, isGzJson } = require('./lib/read-gz')
+const { join, resolve, basename } = require('path')
 const BloomFilter = require('bloom-filter')
 
-const fs = require('fs').promises
-const { join, resolve, basename } = require('path')
-const async = require('async')
-
-function asyncMap(coll, limit, fn) {
-    return new Promise((resolve, reject) => {
-        async.mapLimit(coll, limit, fn, (err, results) => !err ? resolve(results) : reject(err))
-    })
-}
-
-// calculate metrics
+// statistic variables
 let perLanguage = {}
 let uniqPerLanguage = {}
 let uniqPerYear = {}
 let uniqDelta = []
 const bloomFilter = BloomFilter.create(1e7, 1e-5)
 
-// resolve to getter function that returns a list of commits
+// read commits in <dataDir> into memory for fast processing
+// -> Promise( function -> [commitJson] )
+//
+// print statistics to stdout
 async function buildCommitCache(dataDir) {
     console.log('Please wait, building commit cache...')
     const commitDir = join(dataDir, 'commits')
@@ -32,24 +28,25 @@ async function buildCommitCache(dataDir) {
     let done = 0
 
     const commits = await asyncMap(
-        commitFiles,
+        commitFiles.filter(isGzJson),
         64,
         async filename => {
-            const {
-                commit,
-                repo
-            } = await readGzFile(join(commitDir, filename), 'utf-8').then(str => JSON.parse(str))
+            const { commit, repo } = await readGzJson(join(commitDir, filename))
 
             if (++done % 500 === 0) console.log(`Commit cache progress: ${done} / ${commitFiles.length}, rss: ${bytes(process.memoryUsage().rss)}`)
 
+            // calculate statistics
             const language = repo.language
             const authorDate = new Date(commit.commit.author.date)
             const message =commit.commit.message
             const year = authorDate.getFullYear()
-            const commitSignature = `${authorDate} ${message.slice(0, message.indexOf('\n'))}`
+
+            // commit signature is a join of changed file's hashes
+            const commitSignature = commit.files.map(f => f.sha).join(',')
 
             perLanguage[language] = perLanguage[language] + 1 || 1
 
+            // remove duplicates based on commit signature
             if (!bloomFilter.contains(commitSignature)) {
                 bloomFilter.insert(commitSignature)
                 uniqPerLanguage[language] = uniqPerLanguage[language] + 1 || 1
@@ -78,29 +75,35 @@ async function buildCommitCache(dataDir) {
     await fs.writeFile(join(dataDir, 'stat-u-language.json'), JSON.stringify(uniqPerLanguage, null, '  '))
     await fs.writeFile(join(dataDir, 'stat-u-year.json'), JSON.stringify(uniqPerYear, null, '  '))
     await fs.writeFile(join(dataDir, 'stat-u-delta.txt'), uniqDelta.join('\n'))
-    console.log('Statistics written.')
+    console.log(`Statistics written to ${dataDir}`)
+
     return () => commits
 }
 
-module.exports = function(opts) {
+// start up a Web UI playgroud to view and experiment with collected commits
+// default port is 8091, accessible via http://localhost:8091/
+module.exports = function ghdcDataInspect(opts) {
     const dataDir = opts.dataDir
 
+    // build commit cache
     let getCommits = null
-
-    // build commit cache in background
     buildCommitCache(dataDir).then(getCommitsFn => getCommits = getCommitsFn)
 
+    // set up Web UI
     const app = new Koa()
     const route = new KoaRouter()
 
+    // serve static resources (CSS, JS)
     app.use(KoaStatic(resolve(__dirname, './inspector/'), { defer: false }))
 
+    // set up template engine
     route.use(KoaViews(resolve(__dirname, './inspector/template/'), {
         map: {
           html: 'ejs'
         }
     }))
 
+    // index, supports filter and sort
     route.get('/', async ctx => {
         const {
             filter = 'return true',
@@ -119,19 +122,14 @@ module.exports = function(opts) {
             .sort((a, b) => sortFn(a,b))
 
         await ctx.render('index', {
-            dataDir: basename(opts.dataDir),
-            query: ctx.query,
+            dataDir: basename(dataDir),
+            query: { filter, sort },
             isReady,
             list,
         })
     })
 
-    route.get('/commits/:commit/', async ctx => {
-        console.log(ctx.query)
-        console.log(ctx.params)
-        // TODO:
-    })
-
+    // start Web server
     app.use(route.routes())
     app.listen(opts.port)
     console.log(`Server started at :${opts.port}`)

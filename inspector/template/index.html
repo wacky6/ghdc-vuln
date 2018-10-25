@@ -106,7 +106,7 @@ random: random() -> number    // seeded random generator </code></pre>
                     <% for(const commit of list) { %>
                     <tr>
                         <td class="field lang"><%= commit.language %></td>
-                        <td class="field repo"><a href="<%= `/commits/${commit.sha}` %>"><%= commit.repo %></a></td>
+                        <td class="field repo"><a href="<%= commit.githubUrl %>""><%= `${commit.repo} @${commit.sha.slice(0, 6)} `%></a></td>
                         <td class="field stats">
                             <span class="field files"><%= commit.files %></span>,
                             <span class="field additions">+<%= commit.additions %></span>,
@@ -114,7 +114,7 @@ random: random() -> number    // seeded random generator </code></pre>
                         </td>
                         <td class="field title"><%= commit.title %></td>
                         <td class="field date"><%= new Date(commit.time).toISOString().slice(0,19).replace('T', ' ') %></td>
-                        <td class="field op"><a href="<%= commit.githubUrl %>">[GitHub]</a></td>
+                        <td class="field op"></td>
                     </tr>
                     <% } %>
                 </tbody>
@@ -124,10 +124,7 @@ random: random() -> number    // seeded random generator </code></pre>
 
     <script src="/static/prism.js"></script>
     <script>
-        window._previousQuery = <%- JSON.stringify(query) %>
-    </script>
-    <script>
-        const query = window._previousQuery
+        const query = <%- JSON.stringify(query) %>
         const $ = (...args) => document.querySelector(...args)
         const filterFn = ace.edit("filter-fn")
         filterFn.setTheme("ace/theme/github")
